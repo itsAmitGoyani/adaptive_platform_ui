@@ -5,7 +5,7 @@ import UIKit
 class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
     private let channel: FlutterMethodChannel
     private let container: UIView
-    private let button: UIButton
+    private let button: MenuAnchoredButton
     private var currentButtonStyle: String = "plain"
     private var isRoundButton: Bool = false
     private var labels: [String] = []
@@ -16,7 +16,7 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
     init(frame: CGRect, viewId: Int64, args: Any?, messenger: FlutterBinaryMessenger) {
         self.channel = FlutterMethodChannel(name: "adaptive_platform_ui/ios26_popup_menu_button_\(viewId)", binaryMessenger: messenger)
         self.container = UIView(frame: frame)
-        self.button = UIButton(type: .system)
+        self.button = MenuAnchoredButton(type: .system)
 
         var title: String? = nil
         var iconName: String? = nil
@@ -29,8 +29,10 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
         var dividers: [NSNumber] = []
         var enabled: [NSNumber] = []
         var isCustomWidget: Bool = false
+        var menuAnchor: MenuAnchoredButton.MenuAnchor = .automatic
 
         if let dict = args as? [String: Any] {
+            if let a = dict["menuAnchor"] as? String { menuAnchor = MenuAnchoredButton.MenuAnchor(rawValue: a) ?? .automatic }
             if let t = dict["buttonTitle"] as? String { title = t }
             if let s = dict["buttonIconName"] as? String { iconName = s }
             if let r = dict["round"] as? NSNumber { makeRound = r.boolValue }
@@ -50,6 +52,7 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
         if #available(iOS 13.0, *) { container.overrideUserInterfaceStyle = isDark ? .dark : .light }
 
         button.translatesAutoresizingMaskIntoConstraints = false
+        button.menuAnchor = menuAnchor
         if let t = tint { button.tintColor = t }
         else if #available(iOS 13.0, *) { button.tintColor = .label }
 
@@ -128,6 +131,11 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
                     self.rebuildMenu()
                     result(nil)
                 } else { result(FlutterError(code: "bad_args", message: "Missing menu items", details: nil)) }
+            case "setMenuAnchor":
+                if let args = call.arguments as? [String: Any], let a = args["menuAnchor"] as? String {
+                    self.button.menuAnchor = MenuAnchoredButton.MenuAnchor(rawValue: a) ?? .automatic
+                    result(nil)
+                } else { result(FlutterError(code: "bad_args", message: "Missing menuAnchor", details: nil)) }
             case "updateButtonContent":
                 if let args = call.arguments as? [String: Any] {
                     let title = args["buttonTitle"] as? String
@@ -299,6 +307,50 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
                 button.setImage(image, for: .normal)
             }
         }
+    }
+}
+
+/// A button whose menu attaches to one end of the button.
+///
+/// UIKit centers a button menu on the highlight preview and clamps it to the
+/// screen edges, so a wide button gets a centered menu. With `.leading` or
+/// `.trailing` the preview is an invisible square at that end of the button,
+/// and the menu follows it. `.automatic` keeps UIKit's placement.
+final class MenuAnchoredButton: UIButton {
+    enum MenuAnchor: String {
+        case automatic, leading, trailing
+    }
+
+    var menuAnchor: MenuAnchor = .automatic {
+        didSet { setNeedsLayout() }
+    }
+
+    private lazy var anchorView: UIView = {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+        addSubview(view)
+        return view
+    }()
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard menuAnchor != .automatic else { return }
+        let side = bounds.height
+        let rightToLeft = effectiveUserInterfaceLayoutDirection == .rightToLeft
+        let atLeft = (menuAnchor == .leading) != rightToLeft
+        anchorView.frame = CGRect(x: atLeft ? 0 : bounds.width - side, y: 0, width: side, height: side)
+    }
+
+    // UIControl's documented hook (UIControl.h, "Implementing UIControl Menus"):
+    // the highlight preview decides where the menu is placed.
+    override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+        guard menuAnchor != .automatic else {
+            return super.contextMenuInteraction(interaction, previewForHighlightingMenuWithConfiguration: configuration)
+        }
+        let parameters = UIPreviewParameters()
+        parameters.backgroundColor = .clear
+        return UITargetedPreview(view: anchorView, parameters: parameters)
     }
 }
 

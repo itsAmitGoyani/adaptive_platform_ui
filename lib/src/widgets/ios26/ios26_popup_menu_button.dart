@@ -51,6 +51,23 @@ enum PopupButtonStyle {
   prominentGlass,
 }
 
+/// Where the native iOS 26+ menu attaches to the button.
+///
+/// UIKit centers a button menu on its anchor and clamps it to the screen
+/// edges, so a wide button gets a centered menu. [leading] and [trailing]
+/// attach the menu to one end of the button instead. Ignored on iOS < 26 and
+/// on Android.
+enum AdaptiveMenuAnchor {
+  /// UIKit's own placement: centered on the button.
+  automatic,
+
+  /// The menu attaches to the leading end of the button.
+  leading,
+
+  /// The menu attaches to the trailing end of the button.
+  trailing,
+}
+
 /// Native iOS 26 popup menu button implementation using platform views
 class IOS26PopupMenuButton<T> extends StatefulWidget {
   /// Creates a text-labeled popup menu button
@@ -66,7 +83,8 @@ class IOS26PopupMenuButton<T> extends StatefulWidget {
   }) : buttonIcon = null,
        child = null,
        width = null,
-       round = false;
+       round = false,
+       menuAnchor = AdaptiveMenuAnchor.automatic;
 
   /// Creates a round, icon-only popup menu button
   const IOS26PopupMenuButton.icon({
@@ -82,7 +100,8 @@ class IOS26PopupMenuButton<T> extends StatefulWidget {
        round = true,
        width = size,
        height = size,
-       shrinkWrap = false;
+       shrinkWrap = false,
+       menuAnchor = AdaptiveMenuAnchor.automatic;
 
   /// Creates a popup menu button with a custom child widget
   const IOS26PopupMenuButton.widget({
@@ -91,6 +110,7 @@ class IOS26PopupMenuButton<T> extends StatefulWidget {
     required this.onSelected,
     this.tint,
     this.buttonStyle = PopupButtonStyle.plain,
+    this.menuAnchor = AdaptiveMenuAnchor.automatic,
     required this.child,
   }) : buttonLabel = null,
        buttonIcon = null,
@@ -132,6 +152,9 @@ class IOS26PopupMenuButton<T> extends StatefulWidget {
   /// Visual style to apply to the button
   final PopupButtonStyle buttonStyle;
 
+  /// Where the native menu attaches to the button (widget mode, iOS 26+)
+  final AdaptiveMenuAnchor menuAnchor;
+
   /// Whether this instance is configured as an icon button variant
   bool get isIconButton => buttonIcon != null;
 
@@ -168,11 +191,26 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
       _updateMenuItems();
     }
 
+    if (oldWidget.menuAnchor != widget.menuAnchor) {
+      _updateMenuAnchor();
+    }
+
     // Check if button label or icon has changed
     if (oldWidget.buttonLabel != widget.buttonLabel ||
         oldWidget.buttonIcon != widget.buttonIcon) {
       _updateButtonContent();
     }
+  }
+
+  Future<void> _updateMenuAnchor() async {
+    final ch = _channel;
+    if (ch == null) return;
+
+    try {
+      await ch.invokeMethod('setMenuAnchor', {
+        'menuAnchor': widget.menuAnchor.name,
+      });
+    } catch (_) {}
   }
 
   Future<void> _updateButtonContent() async {
@@ -291,6 +329,7 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
         if (widget.isIconButton) 'round': true,
         if (isCustomWidget) 'customWidget': true, // Hide native button content
         'buttonStyle': widget.buttonStyle.name,
+        'menuAnchor': widget.menuAnchor.name,
         'labels': labels,
         'sfSymbols': symbols,
         'isDivider': isDivider,

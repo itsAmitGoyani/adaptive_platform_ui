@@ -5,6 +5,7 @@ import 'ios26/ios26_popup_menu_button.dart';
 
 export 'ios26/ios26_popup_menu_button.dart'
     show
+        AdaptiveMenuAnchor,
         AdaptivePopupMenuItem,
         AdaptivePopupMenuDivider,
         AdaptivePopupMenuEntry,
@@ -64,6 +65,9 @@ class AdaptivePopupMenuButton<T> {
   }
 
   /// Creates a popup menu button with a custom child widget
+  ///
+  /// [menuAnchor] attaches the native iOS 26+ menu to one end of a wide
+  /// [child]; other platforms ignore it.
   static Widget widget<T>({
     Key? key,
     required List<AdaptivePopupMenuEntry> items,
@@ -71,6 +75,7 @@ class AdaptivePopupMenuButton<T> {
     onSelected,
     Color? tint,
     PopupButtonStyle buttonStyle = PopupButtonStyle.plain,
+    AdaptiveMenuAnchor menuAnchor = AdaptiveMenuAnchor.automatic,
     required Widget child,
   }) {
     // iOS 26+ - Use gesture detector with native menu
@@ -80,6 +85,7 @@ class AdaptivePopupMenuButton<T> {
         onSelected: onSelected,
         tint: tint,
         buttonStyle: buttonStyle,
+        menuAnchor: menuAnchor,
         child: child,
       );
     }

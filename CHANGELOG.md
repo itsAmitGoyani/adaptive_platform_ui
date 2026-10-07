@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.1.103] — AutoLNK fork, branch `menu-anchor-0.1.103`
+* **NEW**: `menuAnchor` on `AdaptivePopupMenuButton.widget` (`AdaptiveMenuAnchor.automatic | leading | trailing`) — attaches the native iOS 26+ menu to one end of a wide child instead of UIKit's centered placement
+
 ## [0.1.103]
 * **FIX**: Fixed iOS 18 navigation bar not being displayed (@adrianorios)
 
