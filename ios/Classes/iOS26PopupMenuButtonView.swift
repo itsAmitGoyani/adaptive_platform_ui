@@ -53,6 +53,8 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
 
         button.translatesAutoresizingMaskIntoConstraints = false
         button.menuAnchor = menuAnchor
+        button.onMenuWillShow = { [weak self] in self?.channel.invokeMethod("menuWillShow", arguments: nil) }
+        button.onMenuDidHide = { [weak self] in self?.channel.invokeMethod("menuDidHide", arguments: nil) }
         if let t = tint { button.tintColor = t }
         else if #available(iOS 13.0, *) { button.tintColor = .label }
 
@@ -143,6 +145,9 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
                     self.setButtonContent(title: title, icon: iconName)
                     result(nil)
                 } else { result(FlutterError(code: "bad_args", message: "Missing button content", details: nil)) }
+            case "dismissMenu":
+                if #available(iOS 14.0, *) { self.button.contextMenuInteraction?.dismissMenu() }
+                result(nil)
             default:
                 result(FlutterMethodNotImplemented)
             }
@@ -323,6 +328,31 @@ final class MenuAnchoredButton: UIButton {
 
     var menuAnchor: MenuAnchor = .automatic {
         didSet { setNeedsLayout() }
+    }
+
+    /// The menu's life, for the Dart side. Inside a Flutter platform view,
+    /// UIKit's own outside-touch dismissal does not reach the menu: the
+    /// touches land on the Flutter view and on whatever lies under it. So the
+    /// Dart side keeps a barrier up between these two calls and dismisses the
+    /// menu through the channel's `dismissMenu`.
+    var onMenuWillShow: (() -> Void)?
+    var onMenuDidHide: (() -> Void)?
+
+    // UIControl's documented menu hooks (UIControl.h, "Implementing UIControl
+    // Menus"). Super is called only where UIButton implements the hook: the
+    // highlight hook had no implementation on iOS 16 and crashed on super.
+    override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willDisplayMenuFor configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionAnimating?) {
+        if UIButton.instancesRespond(to: #selector(UIContextMenuInteractionDelegate.contextMenuInteraction(_:willDisplayMenuFor:animator:))) {
+            super.contextMenuInteraction(interaction, willDisplayMenuFor: configuration, animator: animator)
+        }
+        onMenuWillShow?()
+    }
+
+    override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willEndFor configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionAnimating?) {
+        if UIButton.instancesRespond(to: #selector(UIContextMenuInteractionDelegate.contextMenuInteraction(_:willEndFor:animator:))) {
+            super.contextMenuInteraction(interaction, willEndFor: configuration, animator: animator)
+        }
+        onMenuDidHide?()
     }
 
     private lazy var anchorView: UIView = {

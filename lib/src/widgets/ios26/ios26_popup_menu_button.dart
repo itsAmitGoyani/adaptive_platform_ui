@@ -165,6 +165,9 @@ class IOS26PopupMenuButton<T> extends StatefulWidget {
 
 class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
   MethodChannel? _channel;
+
+  /// Up while the native menu is: see [_showBarrier].
+  OverlayEntry? _barrier;
   bool? _lastIsDark;
   int? _lastTint;
   double? _intrinsicWidth;
@@ -286,6 +289,7 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
 
   @override
   void dispose() {
+    _removeBarrier();
     _channel?.setMethodCallHandler(null);
     super.dispose();
   }
@@ -442,7 +446,16 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
   }
 
   Future<dynamic> _onMethodCall(MethodCall call) async {
+    if (call.method == 'menuWillShow') {
+      _showBarrier();
+      return null;
+    }
+    if (call.method == 'menuDidHide') {
+      _removeBarrier();
+      return null;
+    }
     if (call.method == 'itemSelected') {
+      _removeBarrier();
       final args = call.arguments as Map?;
       final idx = (args?['index'] as num?)?.toInt();
 
@@ -468,6 +481,42 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
       }
     }
     return null;
+  }
+
+  /// Inside a Flutter platform view, UIKit's own outside-touch dismissal does
+  /// not reach the menu: the touches land on the Flutter view and on whatever
+  /// lies under it. So while the native menu is up, a transparent barrier
+  /// covers the root overlay and its first touch asks the native side to
+  /// dismiss the menu. The UIKit menu sits above the Flutter view, so the
+  /// barrier never covers the menu itself.
+  void _showBarrier() {
+    if (_barrier != null || !mounted) return;
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    final entry = OverlayEntry(
+      builder: (_) => Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (_) => _dismissMenu(),
+        child: const SizedBox.expand(),
+      ),
+    );
+    _barrier = entry;
+    overlay.insert(entry);
+  }
+
+  void _removeBarrier() {
+    _barrier?.remove();
+    _barrier = null;
+  }
+
+  Future<void> _dismissMenu() async {
+    try {
+      await _channel?.invokeMethod('dismissMenu');
+    } catch (_) {
+      // An older native side has no handler; the barrier goes either way.
+    } finally {
+      _removeBarrier();
+    }
   }
 
   Future<void> _requestIntrinsicSize() async {
