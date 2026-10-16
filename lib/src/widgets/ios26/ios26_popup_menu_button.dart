@@ -18,6 +18,8 @@ class AdaptivePopupMenuItem<T> extends AdaptivePopupMenuEntry {
     this.icon,
     this.enabled = true,
     this.value,
+    this.checked = false,
+    this.destructive = false,
   });
 
   /// Display label for the item
@@ -31,6 +33,14 @@ class AdaptivePopupMenuItem<T> extends AdaptivePopupMenuEntry {
 
   /// Optional value of type T associated with this item
   final T? value;
+
+  /// Shows the system check mark on the iOS 26+ menu (`UIAction.state = .on`),
+  /// the way a picker menu marks its current value.
+  final bool checked;
+
+  /// Draws the item in the system red on the iOS 26+ menu
+  /// (`UIMenuElement.Attributes.destructive`).
+  final bool destructive;
 }
 
 /// A visual divider between popup menu items
@@ -245,7 +255,9 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
         if (oldItem.label != newItem.label ||
             oldItem.icon != newItem.icon ||
             oldItem.enabled != newItem.enabled ||
-            oldItem.value != newItem.value) {
+            oldItem.value != newItem.value ||
+            oldItem.checked != newItem.checked ||
+            oldItem.destructive != newItem.destructive) {
           return true;
         }
       }
@@ -253,15 +265,15 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
     return false;
   }
 
-  Future<void> _updateMenuItems() async {
-    final ch = _channel;
-    if (ch == null) return;
-
-    // Flatten entries into parallel arrays for the platform view
+  /// Flattens the entries into the parallel arrays the platform view reads,
+  /// one slot per entry; a divider fills its slot with blanks.
+  Map<String, List<Object>> _menuArrays() {
     final labels = <String>[];
     final symbols = <String>[];
     final isDivider = <bool>[];
     final enabled = <bool>[];
+    final checked = <bool>[];
+    final destructive = <bool>[];
 
     for (final e in widget.items) {
       if (e is AdaptivePopupMenuDivider) {
@@ -269,21 +281,34 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
         symbols.add('');
         isDivider.add(true);
         enabled.add(false);
+        checked.add(false);
+        destructive.add(false);
       } else if (e is AdaptivePopupMenuItem<T>) {
         labels.add(e.label);
         symbols.add(e.icon is String ? e.icon as String : '');
         isDivider.add(false);
         enabled.add(e.enabled);
+        checked.add(e.checked);
+        destructive.add(e.destructive);
       }
     }
 
+    return {
+      'labels': labels,
+      'sfSymbols': symbols,
+      'isDivider': isDivider,
+      'enabled': enabled,
+      'checked': checked,
+      'destructive': destructive,
+    };
+  }
+
+  Future<void> _updateMenuItems() async {
+    final ch = _channel;
+    if (ch == null) return;
+
     try {
-      await ch.invokeMethod('updateMenuItems', {
-        'labels': labels,
-        'sfSymbols': symbols,
-        'isDivider': isDivider,
-        'enabled': enabled,
-      });
+      await ch.invokeMethod('updateMenuItems', _menuArrays());
     } catch (_) {}
   }
 
@@ -307,26 +332,6 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
   @override
   Widget build(BuildContext context) {
     if (!kIsWeb && Platform.isIOS) {
-      // Flatten entries into parallel arrays for the platform view
-      final labels = <String>[];
-      final symbols = <String>[];
-      final isDivider = <bool>[];
-      final enabled = <bool>[];
-
-      for (final e in widget.items) {
-        if (e is AdaptivePopupMenuDivider) {
-          labels.add('');
-          symbols.add('');
-          isDivider.add(true);
-          enabled.add(false);
-        } else if (e is AdaptivePopupMenuItem<T>) {
-          labels.add(e.label);
-          symbols.add(e.icon is String ? e.icon as String : '');
-          isDivider.add(false);
-          enabled.add(e.enabled);
-        }
-      }
-
       final creationParams = <String, dynamic>{
         if (widget.buttonLabel != null) 'buttonTitle': widget.buttonLabel,
         if (widget.buttonIcon != null) 'buttonIconName': widget.buttonIcon,
@@ -334,10 +339,7 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
         if (isCustomWidget) 'customWidget': true, // Hide native button content
         'buttonStyle': widget.buttonStyle.name,
         'menuAnchor': widget.menuAnchor.name,
-        'labels': labels,
-        'sfSymbols': symbols,
-        'isDivider': isDivider,
-        'enabled': enabled,
+        ..._menuArrays(),
         'isDark': _isDark,
         if (_effectiveTint != null) 'tint': _colorToARGB(_effectiveTint!),
       };
@@ -346,7 +348,7 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
       final itemsKey = widget.items
           .map((item) {
             if (item is AdaptivePopupMenuItem<T>) {
-              return '${item.label}_${item.icon}_${item.enabled}_${item.value}';
+              return '${item.label}_${item.icon}_${item.enabled}_${item.value}_${item.checked}_${item.destructive}';
             }
             return 'divider';
           })
