@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 
+import 'route_settled_offstage.dart';
+
 /// Base type for entries in a popup menu
 abstract class AdaptivePopupMenuEntry {
   /// Const constructor for subclasses
@@ -376,8 +378,10 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
           children: [
             widget.child!, // Determines size and is visible
             Positioned.fill(
-              child:
-                  platformView, // Native button overlay (transparent but catches touches)
+              // Native button overlay (transparent but catches touches). It
+              // leaves the frames of a route transition: see
+              // RouteSettledOffstage.
+              child: RouteSettledOffstage(child: platformView),
             ),
           ],
         );
