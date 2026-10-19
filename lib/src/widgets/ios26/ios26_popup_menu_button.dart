@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart' show PlatformViewHitTestBehavior;
 import 'package:flutter/services.dart';
 
 import 'route_settled_offstage.dart';
@@ -80,6 +81,22 @@ enum AdaptiveMenuAnchor {
   trailing,
 }
 
+/// Opens the native menu of an [IOS26PopupMenuButton] in widget mode from
+/// Dart, for a trigger the native button cannot own: a Flutter long press on
+/// a row whose tap belongs to Flutter.
+///
+/// Give it to the `controller` of [IOS26PopupMenuButton.widget] together with
+/// `passive`, so the native layer takes no touch of its own. One controller
+/// serves one button at a time.
+class AdaptivePopupMenuController {
+  _IOS26PopupMenuButtonState<dynamic>? _state;
+
+  /// Presents the menu as a tap on the button would. Returns false when no
+  /// native view can show it yet: before the view exists, or on a platform
+  /// without the native menu. The caller then shows its own menu.
+  Future<bool> showMenu() => _state?._showMenu() ?? Future<bool>.value(false);
+}
+
 /// Native iOS 26 popup menu button implementation using platform views
 class IOS26PopupMenuButton<T> extends StatefulWidget {
   /// Creates a text-labeled popup menu button
@@ -96,7 +113,9 @@ class IOS26PopupMenuButton<T> extends StatefulWidget {
        child = null,
        width = null,
        round = false,
-       menuAnchor = AdaptiveMenuAnchor.automatic;
+       menuAnchor = AdaptiveMenuAnchor.automatic,
+       controller = null,
+       passive = false;
 
   /// Creates a round, icon-only popup menu button
   const IOS26PopupMenuButton.icon({
@@ -113,7 +132,9 @@ class IOS26PopupMenuButton<T> extends StatefulWidget {
        width = size,
        height = size,
        shrinkWrap = false,
-       menuAnchor = AdaptiveMenuAnchor.automatic;
+       menuAnchor = AdaptiveMenuAnchor.automatic,
+       controller = null,
+       passive = false;
 
   /// Creates a popup menu button with a custom child widget
   const IOS26PopupMenuButton.widget({
@@ -123,6 +144,8 @@ class IOS26PopupMenuButton<T> extends StatefulWidget {
     this.tint,
     this.buttonStyle = PopupButtonStyle.plain,
     this.menuAnchor = AdaptiveMenuAnchor.automatic,
+    this.controller,
+    this.passive = false,
     required this.child,
   }) : buttonLabel = null,
        buttonIcon = null,
@@ -167,6 +190,16 @@ class IOS26PopupMenuButton<T> extends StatefulWidget {
   /// Where the native menu attaches to the button (widget mode, iOS 26+)
   final AdaptiveMenuAnchor menuAnchor;
 
+  /// Opens the native menu from Dart (widget mode, iOS 26+); see
+  /// [AdaptivePopupMenuController].
+  final AdaptivePopupMenuController? controller;
+
+  /// Widget mode, iOS 26+: the native layer takes no touch. The child under
+  /// it keeps every tap, long press and drag, and only [controller] opens
+  /// the menu. The layer is hit-test transparent on the Flutter side and its
+  /// native container returns nothing from `hitTest`.
+  final bool passive;
+
   /// Whether this instance is configured as an icon button variant
   bool get isIconButton => buttonIcon != null;
 
@@ -190,6 +223,12 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
       widget.tint ?? CupertinoTheme.of(context).primaryColor;
 
   @override
+  void initState() {
+    super.initState();
+    widget.controller?._state = this;
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _syncBrightnessIfNeeded();
@@ -198,6 +237,12 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
   @override
   void didUpdateWidget(IOS26PopupMenuButton<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      if (oldWidget.controller?._state == this) {
+        oldWidget.controller?._state = null;
+      }
+      widget.controller?._state = this;
+    }
     // Sync any changes to brightness or tint
     _syncBrightnessIfNeeded();
 
@@ -316,6 +361,7 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
 
   @override
   void dispose() {
+    if (widget.controller?._state == this) widget.controller?._state = null;
     _removeBarrier();
     _channel?.setMethodCallHandler(null);
     super.dispose();
@@ -341,6 +387,7 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
         if (isCustomWidget) 'customWidget': true, // Hide native button content
         'buttonStyle': widget.buttonStyle.name,
         'menuAnchor': widget.menuAnchor.name,
+        if (widget.passive) 'passive': true,
         ..._menuArrays(),
         'isDark': _isDark,
         if (_effectiveTint != null) 'tint': _colorToARGB(_effectiveTint!),
@@ -366,9 +413,17 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
         creationParams: creationParams,
         creationParamsCodec: const StandardMessageCodec(),
         onPlatformViewCreated: _onCreated,
-        gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-          Factory<TapGestureRecognizer>(() => TapGestureRecognizer()),
-        },
+        // A passive layer is hit-test transparent and claims no gesture, so
+        // the Flutter child under it takes every touch. The native container
+        // returns nothing from hitTest, so the button never gets one either.
+        hitTestBehavior: widget.passive
+            ? PlatformViewHitTestBehavior.transparent
+            : PlatformViewHitTestBehavior.opaque,
+        gestureRecognizers: widget.passive
+            ? const <Factory<OneSequenceGestureRecognizer>>{}
+            : <Factory<OneSequenceGestureRecognizer>>{
+                Factory<TapGestureRecognizer>(() => TapGestureRecognizer()),
+              },
       );
 
       // Custom widget mode: Stack with custom widget determining size
@@ -522,6 +577,21 @@ class _IOS26PopupMenuButtonState<T> extends State<IOS26PopupMenuButton<T>> {
       // An older native side has no handler; the barrier goes either way.
     } finally {
       _removeBarrier();
+    }
+  }
+
+  /// See [AdaptivePopupMenuController.showMenu]. The native side presents
+  /// the button's menu through `performPrimaryAction` (iOS 17.4 and later);
+  /// the barrier then comes up through `menuWillShow`, as for a tap.
+  Future<bool> _showMenu() async {
+    final ch = _channel;
+    if (ch == null || !mounted) return false;
+    try {
+      await ch.invokeMethod('showMenu');
+      return true;
+    } catch (_) {
+      // An older native side has no handler, or the iOS version is too old.
+      return false;
     }
   }
 

@@ -6,6 +6,7 @@ import 'ios26/ios26_popup_menu_button.dart';
 export 'ios26/ios26_popup_menu_button.dart'
     show
         AdaptiveMenuAnchor,
+        AdaptivePopupMenuController,
         AdaptivePopupMenuItem,
         AdaptivePopupMenuDivider,
         AdaptivePopupMenuEntry,
@@ -68,6 +69,12 @@ class AdaptivePopupMenuButton<T> {
   ///
   /// [menuAnchor] attaches the native iOS 26+ menu to one end of a wide
   /// [child]; other platforms ignore it.
+  ///
+  /// [passive] with a [controller] (iOS 26+): the native layer takes no
+  /// touch, [child] keeps every gesture, and only
+  /// [AdaptivePopupMenuController.showMenu] opens the menu. On the other
+  /// platforms a passive button is [child] alone, and the caller shows its
+  /// own menu.
   static Widget widget<T>({
     Key? key,
     required List<AdaptivePopupMenuEntry> items,
@@ -76,6 +83,8 @@ class AdaptivePopupMenuButton<T> {
     Color? tint,
     PopupButtonStyle buttonStyle = PopupButtonStyle.plain,
     AdaptiveMenuAnchor menuAnchor = AdaptiveMenuAnchor.automatic,
+    AdaptivePopupMenuController? controller,
+    bool passive = false,
     required Widget child,
   }) {
     // iOS 26+ - Use gesture detector with native menu
@@ -86,9 +95,14 @@ class AdaptivePopupMenuButton<T> {
         tint: tint,
         buttonStyle: buttonStyle,
         menuAnchor: menuAnchor,
+        controller: controller,
+        passive: passive,
         child: child,
       );
     }
+
+    // No native menu here: a passive button is its child alone.
+    if (passive) return child;
 
     // Android - Use Material PopupMenuButton with custom child
     if (PlatformInfo.isAndroid) {

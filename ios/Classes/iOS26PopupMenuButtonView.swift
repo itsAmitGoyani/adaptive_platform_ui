@@ -4,7 +4,7 @@ import UIKit
 /// Platform view for iOS 26 popup menu button
 class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
     private let channel: FlutterMethodChannel
-    private let container: UIView
+    private let container: PassiveContainerView
     private let button: MenuAnchoredButton
     private var currentButtonStyle: String = "plain"
     private var isRoundButton: Bool = false
@@ -17,7 +17,7 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
 
     init(frame: CGRect, viewId: Int64, args: Any?, messenger: FlutterBinaryMessenger) {
         self.channel = FlutterMethodChannel(name: "adaptive_platform_ui/ios26_popup_menu_button_\(viewId)", binaryMessenger: messenger)
-        self.container = UIView(frame: frame)
+        self.container = PassiveContainerView(frame: frame)
         self.button = MenuAnchoredButton(type: .system)
 
         var title: String? = nil
@@ -34,9 +34,11 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
         var destructive: [NSNumber] = []
         var isCustomWidget: Bool = false
         var menuAnchor: MenuAnchoredButton.MenuAnchor = .automatic
+        var passive: Bool = false
 
         if let dict = args as? [String: Any] {
             if let a = dict["menuAnchor"] as? String { menuAnchor = MenuAnchoredButton.MenuAnchor(rawValue: a) ?? .automatic }
+            if let p = dict["passive"] as? NSNumber { passive = p.boolValue }
             if let t = dict["buttonTitle"] as? String { title = t }
             if let s = dict["buttonIconName"] as? String { iconName = s }
             if let r = dict["round"] as? NSNumber { makeRound = r.boolValue }
@@ -55,6 +57,7 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
         super.init()
 
         container.backgroundColor = .clear
+        container.passive = passive
         if #available(iOS 13.0, *) { container.overrideUserInterfaceStyle = isDark ? .dark : .light }
 
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -158,6 +161,15 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
             case "dismissMenu":
                 if #available(iOS 14.0, *) { self.button.contextMenuInteraction?.dismissMenu() }
                 result(nil)
+            case "showMenu":
+                // The primary action of a `showsMenuAsPrimaryAction` button is
+                // its menu, so this presents it as a tap would (iOS 17.4+).
+                if #available(iOS 17.4, *) {
+                    self.button.performPrimaryAction()
+                    result(nil)
+                } else {
+                    result(FlutterError(code: "unsupported", message: "showMenu needs iOS 17.4", details: nil))
+                }
             default:
                 result(FlutterMethodNotImplemented)
             }
@@ -328,6 +340,18 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
                 button.setImage(image, for: .normal)
             }
         }
+    }
+}
+
+/// The container of the native button. A passive container returns nothing
+/// from `hitTest`, so UIKit routes no touch to the button: the Flutter
+/// content under the platform view keeps every gesture, and the menu opens
+/// only through the channel's `showMenu`.
+final class PassiveContainerView: UIView {
+    var passive: Bool = false
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        passive ? nil : super.hitTest(point, with: event)
     }
 }
 

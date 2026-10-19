@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.1.103] — AutoLNK fork, branch `menu-show-0.1.103`
+* **NEW**: `passive` and `controller` on `AdaptivePopupMenuButton.widget` — a passive native layer takes no touch (hit-test transparent in Flutter, `hitTest` returns nothing in UIKit), so the child keeps its taps, long presses and drags, and `AdaptivePopupMenuController.showMenu()` presents the iOS 26+ menu from Dart through `performPrimaryAction` (iOS 17.4+)
+
 ## [0.1.103] — AutoLNK fork, branch `menu-anchor-0.1.103`
 * **NEW**: `menuAnchor` on `AdaptivePopupMenuButton.widget` (`AdaptiveMenuAnchor.automatic | leading | trailing`) — attaches the native iOS 26+ menu to one end of a wide child instead of UIKit's centered placement
 
